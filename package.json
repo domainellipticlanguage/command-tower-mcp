@@ -1,0 +1,25 @@
+{
+  "name": "command-tower-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for vibe-brewing Magic: The Gathering decks on Archidekt, with Scryfall card search and custom card creation",
+  "type": "module",
+  "main": "index.js",
+  "bin": {
+    "command-tower-mcp": "./index.js"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "dev": "npx @modelcontextprotocol/inspector node index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "dotenv": "^16.0.0",
+    "mtg-crucible": "^0.4.9",
+    "puppeteer": "^24.36.0",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.11"
+  }
+}
