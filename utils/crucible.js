@@ -116,6 +116,14 @@ function faceToArchidekt(card, prefix, imageUrl) {
  * @returns {object} Archidekt custom-card fields
  */
 export function toArchidektCustomCard(cardData, { frontImageUrl, backImageUrl } = {}) {
+  // TODO: better handle single-faced composite cards (split / adventure / omen /
+  // room / aftermath / fuse / flip). crucible renders those as ONE image (no
+  // backFace), but because they still carry a `linkedCard` we currently mark
+  // hasBack=true and split the second part into back* fields with a null
+  // backImageUrl — so Archidekt treats them as a double-faced card with a
+  // missing back. These should map to a single Archidekt face (hasBack=false)
+  // using the one composite image. `backImageUrl` is the reliable signal: it's
+  // only set for true two-image DFCs (transform / modal DFC).
   const hasBack = !!cardData.linkedCard;
 
   return {
