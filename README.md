@@ -89,7 +89,7 @@ npx @modelcontextprotocol/inspector node index.js
 
 - [x] Validate deck legality
 - [x] Integrate with custom card generation
-- [ ] Fix edge case around quantity changes
+- [x] Fix edge case around quantity changes
 
 ## Disclaimer
 

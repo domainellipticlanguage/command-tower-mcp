@@ -704,13 +704,27 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           );
 
           if (deckCard) {
-            cardActions.push(archidekt.createRemoveCardAction({
-              cardId: String(deckCard.card.id),
-              deckRelationId: String(deckCard.id),
-              quantity: qty,
-              categories: deckCard.categories || [],
-              modifier: deckCard.modifier || 'Normal',
-            }));
+            const currentQty = deckCard.quantity || 1;
+            if (qty >= currentQty) {
+              // Removing the whole stack: "remove" deletes the deck relation.
+              cardActions.push(archidekt.createRemoveCardAction({
+                cardId: String(deckCard.card.id),
+                deckRelationId: String(deckCard.id),
+                quantity: currentQty,
+                categories: deckCard.categories || [],
+                modifier: deckCard.modifier || 'Normal',
+              }));
+            } else {
+              // Partial removal: "remove" would wipe the whole relation, so
+              // "modify" the relation down to the remaining quantity instead.
+              cardActions.push(archidekt.createModifyCardAction({
+                cardId: String(deckCard.card.id),
+                deckRelationId: String(deckCard.id),
+                quantity: currentQty - qty,
+                categories: deckCard.categories || [],
+                modifier: deckCard.modifier || 'Normal',
+              }));
+            }
           } else {
             warnings.push(`Card not found in deck: ${cardName}`);
           }
@@ -723,13 +737,27 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         for (const { name: cardName, quantity } of removeExtract.customLines) {
           const entry = deckCustomCards.find(c => c.card?.frontName?.toLowerCase() === cardName.toLowerCase());
           if (entry) {
-            cardActions.push(archidekt.createRemoveCustomCardAction({
-              customCardId: entry.card.id,
-              deckRelationId: String(entry.id),
-              quantity,
-              categories: entry.categories || [],
-              modifier: entry.modifier || 'Normal',
-            }));
+            const currentQty = entry.quantity || 1;
+            if (quantity >= currentQty) {
+              // Removing the whole stack: "remove" deletes the deck relation.
+              cardActions.push(archidekt.createRemoveCustomCardAction({
+                customCardId: entry.card.id,
+                deckRelationId: String(entry.id),
+                quantity: currentQty,
+                categories: entry.categories || [],
+                modifier: entry.modifier || 'Normal',
+              }));
+            } else {
+              // Partial removal: "modify" down to the remaining quantity so we
+              // don't wipe the whole relation.
+              cardActions.push(archidekt.createModifyCustomCardAction({
+                customCardId: entry.card.id,
+                deckRelationId: String(entry.id),
+                quantity: currentQty - quantity,
+                categories: entry.categories || [],
+                modifier: entry.modifier || 'Normal',
+              }));
+            }
           } else {
             warnings.push(`Custom card not found in deck: ${cardName}`);
           }
@@ -759,7 +787,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       // Build summary
       const added = result.add?.length || 0;
-      const removed = cardActions.filter(a => a.action === 'remove').length;
+      // "modify" actions here are always partial removals (stack reductions).
+      const removed = cardActions.filter(a => a.action === 'remove' || a.action === 'modify').length;
 
       let summary = `Updated deck ${deck_id}:\n`;
       if (added > 0) summary += `- Added ${added} card(s)\n`;

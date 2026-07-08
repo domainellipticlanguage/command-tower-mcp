@@ -577,6 +577,88 @@ export function createRemoveCustomCardAction(options) {
 }
 
 /**
+ * Helper to create a "modify" action for a card already in the deck.
+ * Unlike "remove" (which deletes the entire deck relation regardless of
+ * quantity), "modify" sets the relation to an absolute quantity — use it to
+ * reduce (or increase) a stack without wiping it.
+ * @param {object} options
+ * @param {string} options.cardId - Archidekt card ID
+ * @param {string} options.deckRelationId - The deck relation ID from the deck
+ * @param {number} options.quantity - The new absolute quantity for the relation
+ * @param {Array<string>} [options.categories=[]]
+ * @param {string} [options.modifier='Normal']
+ * @param {string} [options.label=',#656565']
+ * @returns {object}
+ */
+export function createModifyCardAction(options) {
+  const {
+    cardId,
+    deckRelationId,
+    quantity,
+    categories = [],
+    modifier = 'Normal',
+    label = ',#656565',
+  } = options;
+
+  return {
+    action: 'modify',
+    cardid: cardId,
+    customCardId: null,
+    categories,
+    patchId: generatePatchId(),
+    modifications: {
+      quantity,
+      modifier,
+      customCmc: null,
+      companion: false,
+      flippedDefault: false,
+      label,
+    },
+    deckRelationId,
+  };
+}
+
+/**
+ * Helper to create a "modify" action for a custom card already in the deck.
+ * See {@link createModifyCardAction} for why this differs from "remove".
+ * @param {object} options
+ * @param {number} options.customCardId - The custom card's ID
+ * @param {string} options.deckRelationId - The deck relation ID from the deck
+ * @param {number} options.quantity - The new absolute quantity for the relation
+ * @param {Array<string>} [options.categories=[]]
+ * @param {string} [options.modifier='Normal']
+ * @param {string} [options.label=',#656565']
+ * @returns {object}
+ */
+export function createModifyCustomCardAction(options) {
+  const {
+    customCardId,
+    deckRelationId,
+    quantity,
+    categories = [],
+    modifier = 'Normal',
+    label = ',#656565',
+  } = options;
+
+  return {
+    action: 'modify',
+    cardid: null,
+    customCardId,
+    categories,
+    patchId: generatePatchId(),
+    modifications: {
+      quantity,
+      modifier,
+      customCmc: null,
+      companion: false,
+      flippedDefault: false,
+      label,
+    },
+    deckRelationId,
+  };
+}
+
+/**
  * Generate a random patch ID for card operations
  * @returns {string}
  */
