@@ -7,6 +7,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 import * as archidekt from './utils/archidekt.js';
 import * as scryfall from './utils/scryfall.js';
 import * as crucible from './utils/crucible.js';
+import { getLegalityIssues, getFormatId, getFormatName } from './utils/legality.js';
 
 const server = new Server(
   {
@@ -82,7 +83,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             format: {
               type: 'string',
-              description: 'Deck format: commander, standard, modern, legacy, vintage, pauper, pioneer, brawl, historic, oathbreaker',
+              description: 'Deck format: commander, standard, modern, legacy, vintage, pauper, "pauper edh" (aka pdh), pioneer, brawl, oathbreaker, "duel commander", premodern, predh, custom',
               default: 'commander',
             },
             description: {
@@ -228,7 +229,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             format: {
               type: 'string',
-              description: 'Filter to cards legal in format: commander (default), modern, legacy, standard, pioneer, pauper, vintage, etc. Use "all" for no filter.',
+              description: 'Filter to cards legal in format: commander (default), modern, legacy, standard, pioneer, pauper, paupercommander (Pauper EDH), vintage, etc. Use "all" for no filter. Tip for Pauper EDH: "format:paupercommander" gives 99-legal (common) cards; add "r:uncommon t:creature" to find eligible commanders.',
             },
           },
           required: ['query'],
@@ -238,75 +239,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
   };
 });
 
-// Check Commander legality for a list of deck cards.
-// Returns an array of issue strings.
-function getCommanderLegalityIssues(cards) {
-  const issues = [];
-
-  const commanders = cards.filter(c => c.categories?.includes('Commander'));
-  const commanderColors = new Set();
-  for (const cmd of commanders) {
-    for (const color of cmd.card.oracleCard.colorIdentity || []) {
-      commanderColors.add(color);
-    }
-  }
-
-  for (const c of cards) {
-    const oracle = c.card.oracleCard;
-    const name = oracle.name;
-
-    const legality = oracle.legalities?.commander;
-    if (legality && legality !== 'legal') {
-      issues.push(`${name} is ${legality} in Commander`);
-    }
-
-    if (!c.categories?.includes('Commander') && commanders.length > 0) {
-      for (const color of oracle.colorIdentity || []) {
-        if (!commanderColors.has(color)) {
-          issues.push(`${name} has ${color} in its color identity, outside commander's identity`);
-          break;
-        }
-      }
-    }
-
-  }
-
-  // Aggregate quantities by card name for singleton check
-  const totalsByName = {};
-  for (const c of cards) {
-    const oracle = c.card.oracleCard;
-    const name = oracle.name;
-    totalsByName[name] = (totalsByName[name] || 0) + c.quantity;
-  }
-  for (const c of cards) {
-    const oracle = c.card.oracleCard;
-    const name = oracle.name;
-    const isBasicLand = oracle.superTypes?.includes('Basic') && oracle.types?.includes('Land');
-    if (totalsByName[name] > 1 && !isBasicLand) {
-      issues.push(`${name} has ${totalsByName[name]} copies (singleton violation)`);
-      delete totalsByName[name]; // only report once
-    }
-  }
-
-  return issues;
-}
-
-// Helper to map format string to Archidekt format ID
-function getFormatId(format) {
-  const formats = {
-    standard: 1,
-    modern: 2,
-    commander: 3,
-    legacy: 4,
-    vintage: 5,
-    pauper: 6,
-    pioneer: 7,
-    brawl: 8,
-    historic: 9,
-    oathbreaker: 10,
-  };
-  return formats[format?.toLowerCase()] || formats.commander;
-}
+// Legality checking and format-name/ID handling live in ./utils/legality.js
+// (getLegalityIssues, getFormatId, getFormatName), imported above.
 
 // Custom cards are referenced in deck text lists with a "Custom#" prefix, e.g.
 // "1 Custom#Maelstrom Vibe-Brewer". They can't be resolved via Scryfall/diff,
@@ -462,14 +396,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
       }
 
-      const formatNames = { 1: 'Standard', 2: 'Modern', 3: 'Commander', 4: 'Legacy', 5: 'Vintage', 6: 'Pauper', 7: 'Pioneer', 8: 'Brawl', 9: 'Historic', 10: 'Oathbreaker' };
-
       // Fetch details for each deck to get commander and description
       const deckPreviews = await Promise.all(
         decks.map(async (d) => {
           try {
             const deck = await archidekt.getDeck(accessToken, d.id);
-            const format = formatNames[deck.deckFormat] || 'Unknown';
+            const format = getFormatName(deck.deckFormat);
             const privacy = deck.private ? '(private)' : '(public)';
 
             // Extract color identity from deck colors
@@ -510,7 +442,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             return preview;
           } catch {
             // Fallback if deck details fail
-            const format = formatNames[d.deckFormat] || 'Unknown';
+            const format = getFormatName(d.deckFormat);
             const privacy = d.private ? '(private)' : '(public)';
             const colorOrder = ['W', 'U', 'B', 'R', 'G'];
             const colors = d.colors || {};
@@ -578,7 +510,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const totalCards = entries.reduce((sum, e) => sum + e.qty, 0);
 
       // Format output
-      let output = `# ${deck.name} (${totalCards} cards)\n\n`;
+      let output = `# ${deck.name} — ${getFormatName(deck.deckFormat)} (${totalCards} cards)\n\n`;
       for (const [category, categoryCards] of Object.entries(byCategory)) {
         const categoryCount = categoryCards.reduce((sum, e) => sum + e.qty, 0);
         output += `# ${category} (${categoryCount})\n`;
@@ -590,10 +522,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       output += `Total: ${totalCards} cards\n\n`;
 
-      const issues = getCommanderLegalityIssues(cards);
+      const issues = getLegalityIssues(cards, deck.deckFormat);
 
-      if (issues.length > 0 || true) {
-        output += `# Legality Issues (${issues.length})\n`;
+      output += `# Legality — ${getFormatName(deck.deckFormat)}\n`;
+      if (issues.length === 0) {
+        output += `No legality issues found.\n`;
+      } else {
+        output += `${issues.length} issue(s):\n`;
         for (const issue of issues) {
           output += `- ${issue}\n`;
         }
@@ -628,7 +563,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       // Get current deck state
       const deck = await archidekt.getDeck(accessToken, deck_id);
-      const issuesBefore = new Set(getCommanderLegalityIssues(deck.cards || []));
+      const issuesBefore = new Set(getLegalityIssues(deck.cards || [], deck.deckFormat));
 
       // Build current deck list string from deck cards
       const currentCards = deck.cards || [];
@@ -801,7 +736,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       // Check for newly introduced legality issues
-      const issuesAfter = getCommanderLegalityIssues(updatedDeck.cards || []);
+      const issuesAfter = getLegalityIssues(updatedDeck.cards || [], updatedDeck.deckFormat);
       const newIssues = issuesAfter.filter(i => !issuesBefore.has(i));
       if (newIssues.length > 0) {
         summary += `\n\nLegality Issues Introduced:\n${newIssues.map(i => `- ${i}`).join('\n')}`;
